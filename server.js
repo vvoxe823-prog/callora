@@ -1,15 +1,14 @@
 const WebSocket = require('ws');
-
 const PORT = process.env.PORT || 8080;
 
 const wss = new WebSocket.Server({
     port: PORT
 });
 
-let customer = null;
-let agent = null;
+let kitchen = null;
 
-function send(ws, data){
+function send(ws, data)
+{
 
     if(
         ws &&
@@ -24,95 +23,55 @@ function send(ws, data){
 
 }
 
-wss.on('connection', ws => {
 
-    ws.on('message', raw => {
+wss.on('connection', function(ws)
+{
+    ws.on('message', function(raw)
+    {
 
         let message;
 
-        try{
+        try {
 
             message = JSON.parse(
                 raw.toString()
             );
 
-        }catch(error){
+        } catch(error) {
+
+            console.error(
+                'Invalid JSON'
+            );
 
             return;
 
         }
 
-        if(message.type === 'register'){
 
-            if(message.role === 'customer'){
+        /*
+        |--------------------------------------------------------------------------
+        | Kitchen registration
+        |--------------------------------------------------------------------------
+        */
 
-                customer = ws;
+        if(
+            message.type === 'register' &&
+            message.role === 'kitchen'
+        ){
 
-            }
+            kitchen = ws;
 
-            if(message.role === 'agent'){
+            /*
+            | Reply to kitchen
+            */
 
-                agent = ws;
+            send(kitchen, {
 
-            }
+                type: 'kitchen_status',
+                message: 'Kitchen Connected'
 
-            send(ws, {
-                type:'registered',
-                role:message.role
             });
 
-            return;
-
-        }
-
-        if(message.type === 'call'){
-
-            send(agent, {
-                type:'incoming',
-                name:message.name,
-                offer:message.offer
-            });
-
-            return;
-
-        }
-
-        if(message.type === 'answer'){
-
-            send(customer, {
-                type:'answer',
-                answer:message.answer
-            });
-
-            return;
-
-        }
-
-        if(message.type === 'candidate'){
-
-            const target =
-                ws === customer
-                    ? agent
-                    : customer;
-
-            send(target, {
-                type:'candidate',
-                candidate:message.candidate
-            });
-
-            return;
-
-        }
-
-        if(message.type === 'end'){
-
-            send(customer, {
-                type:'ended'
-            });
-
-            send(agent, {
-                type:'ended'
-            });
 
             return;
 
@@ -120,23 +79,25 @@ wss.on('connection', ws => {
 
     });
 
-    ws.on('close', () => {
 
-        if(ws === customer){
+    ws.on('close', function()
+    {
 
-            customer = null;
+        if(ws === kitchen){
 
-        }
+            kitchen = null;
 
-        if(ws === agent){
-
-            agent = null;
+            console.log(
+                'Kitchen disconnected'
+            );
 
         }
 
     });
 
-    ws.on('error', error => {
+
+    ws.on('error', function(error)
+    {
 
         console.error(
             'WebSocket error:',
@@ -147,19 +108,12 @@ wss.on('connection', ws => {
 
 });
 
-wss.on('listening', () => {
+
+wss.on('listening', function()
+{
 
     console.log(
-        `CallPilot signaling server running on port ${PORT}`
-    );
-
-});
-
-wss.on('error', error => {
-
-    console.error(
-        'WebSocket server error:',
-        error
+        `WSS server running on port ${PORT}`
     );
 
 });
