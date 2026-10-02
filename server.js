@@ -5,7 +5,30 @@ const wss = new WebSocket.Server({
     port: PORT
 });
 
+
+/*
+|--------------------------------------------------------------------------
+| Kitchen
+|--------------------------------------------------------------------------
+*/
+
 let kitchen = null;
+
+/*
+|--------------------------------------------------------------------------
+| Customers
+|--------------------------------------------------------------------------
+*/
+
+const customers = new Map();
+
+let customerCounter = 1000;
+
+/*
+|--------------------------------------------------------------------------
+| Send data
+|--------------------------------------------------------------------------
+*/
 
 function send(ws, data)
 {
@@ -24,8 +47,21 @@ function send(ws, data)
 }
 
 
+/*
+|--------------------------------------------------------------------------
+| WebSocket connection
+|--------------------------------------------------------------------------
+*/
+
 wss.on('connection', function(ws)
 {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Message received
+    |--------------------------------------------------------------------------
+    */
+
     ws.on('message', function(raw)
     {
 
@@ -61,14 +97,173 @@ wss.on('connection', function(ws)
 
             kitchen = ws;
 
-            /*
-            | Reply to kitchen
-            */
-
             send(kitchen, {
 
                 type: 'kitchen_status',
                 message: 'Kitchen Connected'
+
+            });
+
+
+            /*
+            | Send existing customers to kitchen
+            */
+
+            customers.forEach(function(
+                customer,
+                customerId
+            ){
+
+                send(kitchen, {
+
+                    type: 'customer_connected',
+                    customerId: customerId
+
+                });
+
+            });
+
+
+            return;
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Customer registration
+        |--------------------------------------------------------------------------
+        */
+
+        if(
+            message.type === 'register' &&
+            message.role === 'customer'
+        ){
+
+            customerCounter++;
+
+            const customerId =
+                'customer_' +
+                customerCounter;
+
+
+            /*
+            | Store customer WebSocket
+            */
+
+            customers.set(
+                customerId,
+                ws
+            );
+
+
+            /*
+            | Store ID on WebSocket itself
+            */
+
+            ws.customerId =
+                customerId;
+
+
+            console.log(
+                'Customer connected:',
+                customerId
+            );
+
+
+            /*
+            | Tell customer their ID
+            */
+
+            send(ws, {
+
+                type: 'customer_registered',
+                customerId: customerId
+
+            });
+
+
+            /*
+            | Tell kitchen a new customer
+            | has connected
+            */
+
+            send(kitchen, {
+
+                type: 'customer_connected',
+                customerId: customerId
+
+            });
+
+
+            return;
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Customer sends message
+        |--------------------------------------------------------------------------
+        */
+
+        if(
+            message.type === 'message' &&
+            ws.customerId
+        ){
+
+            console.log(
+                ws.customerId +
+                ': ' +
+                message.text
+            );
+
+
+            /*
+            | Send message to kitchen
+            */
+
+            send(kitchen, {
+
+                type: 'customer_message',
+
+                customerId:
+                    ws.customerId,
+
+                text:
+                    message.text
+
+            });
+
+
+            return;
+
+        }
+
+
+        /*
+        |--------------------------------------------------------------------------
+        | Kitchen sends message to customer
+        |--------------------------------------------------------------------------
+        */
+
+        if(
+            message.type === 'message' &&
+            ws === kitchen
+        ){
+
+            const customerSocket =
+                customers.get(
+                    message.customerId
+                );
+
+
+            send(customerSocket, {
+
+                type: 'kitchen_message',
+
+                text:
+                    message.text
 
             });
 
@@ -80,12 +275,23 @@ wss.on('connection', function(ws)
     });
 
 
+    /*
+    |--------------------------------------------------------------------------
+    | Connection closed
+    |--------------------------------------------------------------------------
+    */
+
     ws.on('close', function()
     {
+
+        /*
+        | Kitchen disconnected
+        */
 
         if(ws === kitchen){
 
             kitchen = null;
+
 
             console.log(
                 'Kitchen disconnected'
@@ -93,8 +299,51 @@ wss.on('connection', function(ws)
 
         }
 
+
+        /*
+        | Customer disconnected
+        */
+
+        if(ws.customerId){
+
+            const customerId =
+                ws.customerId;
+
+
+            customers.delete(
+                customerId
+            );
+
+
+            console.log(
+                'Customer disconnected:',
+                customerId
+            );
+
+
+            /*
+            | Tell kitchen
+            */
+
+            send(kitchen, {
+
+                type: 'customer_disconnected',
+
+                customerId:
+                    customerId
+
+            });
+
+        }
+
     });
 
+
+    /*
+    |--------------------------------------------------------------------------
+    | Error
+    |--------------------------------------------------------------------------
+    */
 
     ws.on('error', function(error)
     {
@@ -109,11 +358,17 @@ wss.on('connection', function(ws)
 });
 
 
+/*
+|--------------------------------------------------------------------------
+| Server started
+|--------------------------------------------------------------------------
+*/
+
 wss.on('listening', function()
 {
 
     console.log(
-        `WSS server running on port ${PORT}`
+        `Bar chat server running on port ${PORT}`
     );
 
 });
